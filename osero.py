@@ -403,16 +403,20 @@ async def on_message(message):
     # ── 人間プレイヤーの上書き回数制限 ──
     if board[row][col] == opponent_color:
         if "override_count" not in game:
-            game["override_count"] = 0
-        if game["override_count"] >= 10:
+            game["override_count"] = {game["players"][0]: 0, game["players"][1]: 0}
+
+        # プレイヤーの上書き回数を確認
+        current_player = game["players"][game["turn"]]
+        if game["override_count"][current_player] >= 10:
             await message.channel.send("上書きは10回まで可能です。")
             return
-        game["override_count"] += 1
-        # ── 残り回数を自動送信 ──
-        rem = 10 - game["override_count"]
-        await message.channel.send(
-            f"上書きはあと{rem}回可能です。／You can override {rem} more times."
-        )
+
+        # 上書き回数をインクリメント
+        game["override_count"][current_player] += 1
+
+        # 残り回数を自動送信
+        rem = 10 - game["override_count"][current_player]
+        await message.channel.send(f"上書きはあと{rem}回可能です。／You can override {rem} more times.")
 
     # 自分の石への上書きは禁止
     if board[row][col] == color:
