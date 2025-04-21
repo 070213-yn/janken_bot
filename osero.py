@@ -334,6 +334,10 @@ async def on_message(message):
 
     game = games[cid]
 
+    # ── ゲーム開始時に相手が置いた座標を追跡するための辞書を追加 ──
+    if "placed_positions" not in game:
+        game["placed_positions"] = set()
+
     # ── 対戦相手待ちフェーズ ──
     if game.get("stage") == "await_opponent" and message.mentions:
         opponent = message.mentions[0]
@@ -400,7 +404,7 @@ async def on_message(message):
     color = BLACK if game["turn"] == 0 else WHITE
     opponent_color = WHITE if color == BLACK else BLACK
 
-    # ── 人間プレイヤーの上書き回数制限 ──
+   # ── 人間プレイヤーの上書き回数制限 ──
     if board[row][col] == opponent_color:
         if "override_count" not in game:
             game["override_count"] = {game["players"][0]: 0, game["players"][1]: 0}
@@ -409,6 +413,11 @@ async def on_message(message):
         current_player = game["players"][game["turn"]]
         if game["override_count"][current_player] >= 10:
             await message.channel.send("上書きは10回まで可能です。")
+            return
+
+        # ── 相手が置いた座標に連続で上書きしないようにチェック ──
+        if (col, row) in game["placed_positions"]:
+            await message.channel.send("相手が置いた場所に連続で上書きすることはできません。")
             return
 
         # 上書き回数をインクリメント
@@ -427,6 +436,9 @@ async def on_message(message):
     if not make_move(board, col, row, color):
         await message.channel.send("そこには置けません。合法手ではありません。")
         return
+
+    # 上書きが成功した場合、その座標を記録
+    game["placed_positions"].add((col, row))
 
     # 手が成功したらターン移行
     game["last_pos"] = (col, row)
@@ -502,6 +514,5 @@ async def c(ctx):
     used = game.get("override_count", 0)
     remaining = max(0, 10 - used)
     await ctx.send(f"上書きはあと{remaining}回可能です！")
-
 
 bot.run(TOKEN)
