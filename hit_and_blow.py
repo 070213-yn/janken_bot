@@ -201,7 +201,7 @@ class HitBlowGame:
         active_games.pop(self.ctx.guild.id, None)  # ゲームを確実に削除
 
 @bot.command()
-async def hit2(ctx):
+async def hit(ctx):
      if ctx.guild.id in active_games:
          return await ctx.send("🚫 すでにゲームが進行中でございます。", delete_after=10)
 
