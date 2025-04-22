@@ -1,42 +1,40 @@
 @echo off
 chcp 65001 >nul
-echo GitHub にアップロードを開始します...  (Starting upload to GitHub...)
+cd /d "%~dp0"
 
-:: git 初期化（必要な場合） (Initialize git if not yet)
+echo GitHub にアップロードを開始します...
+
+:: リモート origin の URL を取得（存在しない場合はエラー）
+git remote get-url origin >nul 2>&1
+IF %ERRORLEVEL% NEQ 0 (
+    set /p "REMOTE_URL=⚠️ リモートリポジトリURLを入力してください (例: https://github.com/070213-yn/janken_bot): "
+    git remote add origin %REMOTE_URL%
+    echo origin を %REMOTE_URL% に設定しました。
+)
+
+:: git 初期化（必要な場合）
 IF NOT EXIST .git (
     git init
 )
 
-:: .env を除外（まだなら .gitignore に追加） (Exclude .env by adding to .gitignore if missing)
-findstr /C:".env" .gitignore >nul 2>&1
-IF %ERRORLEVEL% NEQ 0 (
+:: .env を .gitignore に追加（未登録時のみ）
+findstr /C:".env" .gitignore >nul 2>&1 || (
     echo .env>>.gitignore
-    echo .env を .gitignore に追加しました。  (Added .env to .gitignore)
+    echo .env を .gitignore に追加しました。
 )
 
-:: すべての変更をステージング (Stage all changes)
-git add hit_and_blow.py
+:: 全ての変更をステージング
 git add --all
 
-:: コミット（日時で一意のコメント） (Commit with timestamp in message)
-for /f "tokens=1-3 delims=/: " %%a in ("%date%") do set d=%%c-%%a-%%b
-for /f "tokens=1-3 delims=:. " %%a in ("%time%") do set t=%%a-%%b-%%c
+:: タイムスタンプ付きコミット
+for /f "tokens=1-3 delims=/- " %%a in ("%date%") do set d=%%c-%%a-%%b
+for /f "tokens=1-3 delims=:. "     %%a in ("%time%") do set t=%%a-%%b-%%c
 set datetime=%d%_%t%
 git commit -m "Update on %datetime%"
 
-:: リモートリポジトリ設定の確認 (Check if remote is set)
-git remote -v >nul 2>&1
-IF %ERRORLEVEL% NEQ 0 (
-    echo. 
-    echo ⚠️ リモートリポジトリが設定されていません。  (Remote not set)
-    echo git remote add origin https://github.com/USERNAME/REPO.git を実行してください。  (Please run git remote add ...)
-    pause
-    exit /b
-)
-
-:: プッシュ (Push to GitHub)
+:: プッシュ
 git push origin main
 
 echo.
-echo ✅ アップロードが完了しました！  (Upload complete!)
+echo ✅ アップロードが完了しました！
 pause
