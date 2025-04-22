@@ -15,7 +15,8 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 :: すべての変更をステージング (Stage all changes)
-git add .
+git add hit_and_blow.py
+git add --all
 
 :: コミット（日時で一意のコメント） (Commit with timestamp in message)
 for /f "tokens=1-3 delims=/: " %%a in ("%date%") do set d=%%c-%%a-%%b
