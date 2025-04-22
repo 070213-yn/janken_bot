@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord.ext import commands
 import random
 import asyncio
@@ -10,11 +10,14 @@ from pathlib import Path
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-# osero.py と同じ階層の image フォルダを指す
-IMAGE_DIR = Path(__file__).resolve().parent / "image"
-BASE_IMAGE = IMAGE_DIR / "hit_board.png" 
 
+# アクティブゲーム格納
 active_games = {}
+
+# 画像フォルダのパス
+IMAGE_DIR = Path(__file__).resolve().parent / "image"
+
+# 色絵文字マッピング
 COLOR_EMOJIS = {
     "r": "<:red:1362318988365004870>",
     "y": "<:yellow:1362318962041425930>",
@@ -24,14 +27,7 @@ COLOR_EMOJIS = {
     "w": "<:white:1362319002541490218>"
 }
 
-# 座標（画像内の配置順）
-GUESS_POSITIONS = [
-    (218, 210),
-    (498, 210),
-    (891, 210),
-    (1171, 210),
-]
-
+# 画像合成用ファイルパス
 COLOR_IMAGE_FILES = {
     "r": IMAGE_DIR / "red.png",
     "y": IMAGE_DIR / "yellow.png",
@@ -41,42 +37,27 @@ COLOR_IMAGE_FILES = {
     "w": IMAGE_DIR / "white.png",
 }
 
-def generate_guess_image(guess) -> Path:
-    """
-    guess: 'rygb' or ['r','y','g','b']
-    returns: Path to the generated image file
-    """
-    if isinstance(guess, list):
-        guess_abbr = [abbr.lower() for abbr in guess]
-        guess_str  = ''.join(guess_abbr)
-    else:
-        guess_str  = str(guess).lower()
-        guess_abbr = list(guess_str)
 
-    base = Image.open(BASE_IMAGE).convert("RGBA")
-
-    icon_size = (235, 235)
-    for i, abbr in enumerate(guess_abbr):
-        if abbr not in COLOR_IMAGE_FILES or i >= len(GUESS_POSITIONS):
-            continue
-        piece = Image.open(COLOR_IMAGE_FILES[abbr]).convert("RGBA").resize(icon_size)
-        cx, cy = GUESS_POSITIONS[i]
-        pw, ph = piece.size
-        pos = (cx - pw // 2, cy - ph // 2)
-        base.paste(piece, pos, piece)
-
-    output_path = IMAGE_DIR / f"guess_{guess_str}.png"
-    base.save(output_path)
-
-    return output_path
-
+# EMOJI_LIST の定義
 EMOJI_LIST = list(COLOR_EMOJIS.values())
+
+def generate_guess_emoji(guess):
+    """
+    guess: ['r', 'y', 'g', 'b']
+    returns: 絵文字で表現された結果文字列
+    """
+    return ''.join(COLOR_EMOJIS[c] for c in guess)
+
+def calculate_hit_blow(secret, guess):
+    hits = sum(s == g for s, g in zip(secret, guess))
+    blows = sum(min(secret.count(c), guess.count(c)) for c in set(guess)) - hits
+    return hits, blows
 
 class HitBlowGame:
     def __init__(self, ctx, players, allow_duplicates, max_turns):
         self.ctx = ctx
         self.players = players
-        self.allow_duplicates = allow_duplicates
+        self.allow_duplicates = allow_duplicates  # True:⭕, False:❌, None:ランダム
         self.max_turns = max_turns
         self.turn_index = 0
         self.turn_count = 0
@@ -86,24 +67,43 @@ class HitBlowGame:
         self.current_player = None
 
     def generate_secret(self):
-        if self.allow_duplicates:
-            duplicated = random.choice(EMOJI_LIST)
-            others = random.sample([e for e in EMOJI_LIST if e != duplicated], 2)
-            secret = [duplicated, duplicated] + others
-            random.shuffle(secret)
-            return secret
+        """
+        allow_duplicates:
+         - True  → 色かぶり⭕（必ずどこかに重複あり）
+         - False → 色かぶり❌（完全にユニーク）
+         - None  → ランダム：重複あり or なし をランダム選択、
+                     重複ありの場合も必ずとはせずランダムで作成
+        """
+        mode = self.allow_duplicates
+        if mode is None:
+            mode = random.choice([True, False])
+
+        if mode:
+            # 重複を許可しつつ、重複が発生するかどうかも半分の確率で決定
+            if random.choice([True, False]):
+                # ２つだけ必ず重複させる
+                duplicated = random.choice(EMOJI_LIST)
+                others = random.sample([e for e in EMOJI_LIST if e != duplicated], 2)
+                secret = [duplicated, duplicated] + others
+            else:
+                # 重複なしで生成
+                secret = random.sample(EMOJI_LIST, 4)
         else:
-            return random.sample(EMOJI_LIST, 4)
+            # 完全に重複なし
+            secret = random.sample(EMOJI_LIST, 4)
+
+        random.shuffle(secret)
+        return secret
 
     async def start(self):
-        emoji_list = ' '.join(COLOR_EMOJIS[c] for c in 'rygbpw')
+        emoji_list   = ' '.join(COLOR_EMOJIS[c] for c in 'rygbpw')
         abbreviation = ' '.join(f"{c}={COLOR_EMOJIS[c]}" for c in 'rygbpw')
+        mode_text    = ('色かぶりランダム' if self.allow_duplicates is None
+                        else '色かぶり⭕' if self.allow_duplicates
+                        else '色かぶり❌')
 
         await self.ctx.send(
-            f"🎯 ヒットアンドブロー開始！（{'色かぶり⭕' if self.allow_duplicates else '色かぶり❌'}、最大{self.max_turns}ターン）\n"
-            f"使える色: {emoji_list}\n"
-            f"略称: {abbreviation}\n"
-            "例: `rbgy` → 実際の色で画像が送られます"
+            f"🎯**Lets!ヒットアンドブロー!**（**{mode_text}**、**{self.max_turns}ターン制**）!joinで途中参加可\n"
         )
         await self.next_turn()
 
@@ -112,7 +112,7 @@ class HitBlowGame:
             return
 
         if self.turn_count >= self.max_turns:
-            await self.ctx.send(f"💀 ターン数上限に達しました！\n答えは：{''.join(self.secret)}\n残念ch！")
+            await self.ctx.send(f"💀 ターン数上限に達しました！\n正解は：{''.join(self.secret)}\nでした")
             await self.show_results(None)
             return
 
@@ -122,44 +122,44 @@ class HitBlowGame:
         remaining = self.max_turns - self.turn_count
         abbreviation = ' '.join(f"{c}={COLOR_EMOJIS[c]}" for c in 'rygbpw')
         await self.ctx.send(
-            f"🌀 {player.mention} さんのターン！（残り {remaining} ターン）\n"
-            f"略称: {abbreviation}"
+            f"⏳ {player.mention} さんのターン！（残り**{remaining}**ターン）\n"
+            f"Color: {abbreviation}"
         )
 
         self.turn_index += 1
         self.turn_count += 1
 
     async def handle_guess(self, user, message):
-        if not self.running or user != self.current_player:
-            return
+           if not self.running or user != self.current_player:
+               return
 
-        raw = message.content.strip().lower()
-        if len(raw) != 4 or any(c not in COLOR_IMAGE_FILES for c in raw):
-            return await message.channel.send("❌ 無効な入力です。r/b/g/y/p/w の略称で4文字を入力してください。")
-        if not self.allow_duplicates and len(set(raw)) < 4:
-            return await message.channel.send("❌ 色はかぶらせずに4つ選んでください。")
+           # ユーザーの入力を取得
+           raw = message.content.strip().lower()
 
-        guess = list(raw)
-        hits, blows = calculate_hit_blow(self.secret, [COLOR_EMOJIS[c] for c in guess])
-        self.guess_log.append((guess, hits, blows))  # ← ここ修正
+           # 入力の検証
+           if len(raw) != 4 or any(c not in COLOR_IMAGE_FILES for c in raw):
+               return  # メッセージ送信をスキップ
 
-        # 画像生成 → Discordに送信
-        image_path = generate_guess_image(guess)
-        await message.channel.send(
-            content=f"🎯 {hits}ヒット {blows}ブロー",
-            file=discord.File(image_path)
-        )
+           guess = list(raw)
+           hits, blows = calculate_hit_blow(self.secret, [COLOR_EMOJIS[c] for c in guess])
+           self.guess_log.append((guess, hits, blows))
 
-        if hits == 4:
-            await self.show_results(winner=user)
-            return
+           # 絵文字結果を生成
+           emoji_result = generate_guess_emoji(guess)
+           await message.channel.send(
+               content=f"🎯 **{hits}ヒット {blows}ブロー** {emoji_result}"
+           )
 
-        await self.next_turn()
-        await self.show_history()
+           if hits == 4:
+               await self.show_results(winner=user)
+               return
+
+           await self.next_turn()
+           await self.show_history()
 
     async def show_results(self, winner):
         if winner:
-            await self.ctx.send(f"🏆 {winner.mention} さんが正解しました！天才ちゃんねる🎉")
+            await self.ctx.send(f"🏆 {winner.mention} さんが正解しました！🎉")
 
         if not self.guess_log:
             await self.ctx.send("📜 結果がありません。")
@@ -185,7 +185,7 @@ class HitBlowGame:
             emoji_guess = ''.join(COLOR_EMOJIS[c] for c in guess_abbr)
             lines.append(f"{i}. {emoji_guess} → {hits}H {blows}B")
 
-        await self.ctx.send("📝 **現在の履歴：**\n" + "\n".join(lines) + "\n")
+        await self.ctx.send("📜 **現在の履歴**\n" + "\n".join(lines) + "\n")
 
     async def exit_player(self, user):
         if user in self.players:
@@ -197,19 +197,20 @@ class HitBlowGame:
     async def force_end(self):
         await self.ctx.send(f"🛑 ゲームが中断されました！答えは：{''.join(self.secret)}")
         await self.show_results(None)
-
-
-
-def calculate_hit_blow(secret, guess):
-    hits = sum(s == g for s, g in zip(secret, guess))
-    blows = sum(min(secret.count(c), guess.count(c)) for c in set(guess)) - hits
-    return hits, blows
+        self.running = False
+        active_games.pop(self.ctx.guild.id, None)  # ゲームを確実に削除
 
 @bot.command()
-async def hit(ctx):
-    if ctx.guild.id in active_games:
-        return await ctx.send("🚫 ゲームが既に進行中です。")
-    await ctx.send("🎮 ヒットアンドブローを始めます！色かぶりの⭕❌を選んでください：", view=ModeSelectView(ctx))
+async def hit2(ctx):
+     if ctx.guild.id in active_games:
+         return await ctx.send("🚫 すでにゲームが進行中でございます。", delete_after=10)
+
+    # チャンネル内でモード選択ビューを表示
+     await ctx.send(
+         "🎮**ヒットアンドブローを始めます**！\n"
+         "🕹️**まずはゲームモードを選択してください!**：",
+         view=ModeSelectView(ctx),
+     )
 
 @bot.command()
 async def end(ctx):
@@ -232,76 +233,126 @@ async def exit(ctx):
 @bot.command()
 async def join(ctx):
     game = active_games.get(ctx.guild.id)
-    # ゲーム中かどうかチェック
     if game and game.running:
-        # すでに参加済みなら弾く
         if ctx.author in game.players:
-            return await ctx.send("🚫 既に参加しています。")
-        # 新しい人数
+            return await ctx.send("🚫 既に参加なさっております。")
+        # 次のターンに合流できるよう挿入
         new_len = len(game.players) + 1
-        # 次のターンに join した人が来るよう、挿入位置を計算
         pos = game.turn_index % new_len
         game.players.insert(pos, ctx.author)
-        await ctx.send(f"🎉 {ctx.author.mention} さんが途中参加しました！")
+        await ctx.send(f"🎉 {ctx.author.mention} さんが参加しました！（次のターンが {ctx.author.mention} さんの番です。） ")
     else:
-        await ctx.send("🚫 現在途中参加可能なゲームはありません。")
+        await ctx.send("🚫 現在参加可能なゲームはございません。")
 
-# UIビュー：色かぶり選択 → ターン数選択
 class ModeSelectView(discord.ui.View):
     def __init__(self, ctx):
-        super().__init__(timeout=10)
+        super().__init__(timeout=30)
         self.ctx = ctx
 
+    async def interaction_check(self, interaction):
+        if interaction.user != self.ctx.author:
+            await interaction.response.send_message(
+                "🚫 あなたはこの操作を行えません。", ephemeral=True
+            )
+            return False
+        return True
+
     @discord.ui.button(label="色かぶり⭕", style=discord.ButtonStyle.success)
-    async def allow_dup(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def allow_dup(self, interaction, button):
         await self.ask_turn(interaction, True)
 
     @discord.ui.button(label="色かぶり❌", style=discord.ButtonStyle.primary)
-    async def no_dup(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def no_dup(self, interaction, button):
         await self.ask_turn(interaction, False)
 
+    @discord.ui.button(label="色かぶりランダム", style=discord.ButtonStyle.danger)
+    async def random_dup(self, interaction, button):
+        await self.ask_turn(interaction, None)
+
     async def ask_turn(self, interaction, allow_dup):
-        await interaction.response.defer()  # ✅ 応答予約（インタラクション失敗防止）
-        await interaction.message.delete()  # ✅ ボタン付きメッセージを削除
-        await self.ctx.send("🎯 ターン数を選んでください：", view=TurnSelectView(self.ctx, allow_dup))  # ✅ 新規に表示
+        # 次はターン数選択ビューをDMで送信
+        await interaction.response.edit_message(
+            content="🎯 **ターン数を選択してください**",
+            view=TurnSelectView(self.ctx, allow_dup)
+        )
 
 class TurnSelectView(discord.ui.View):
     def __init__(self, ctx, allow_dup):
-        super().__init__(timeout=10)
+        super().__init__(timeout=30)
         self.ctx = ctx
         self.allow_dup = allow_dup
+        self.selected_button = None  # 選択されたボタンを追跡
 
-    async def start_entry(self, interaction, max_turns):
-        await self.ctx.send("📢 ヒットアンドブロ―参加者受付中！（5秒間）", view=EntryView(self.ctx, self.allow_dup, max_turns))
-        await interaction.message.delete()
+    async def interaction_check(self, interaction):
+        if interaction.user != self.ctx.author:
+            await interaction.response.send_message(
+                "🚫 あなたはこの操作を行えません。", ephemeral=True
+            )
+            return False
+        return True
+
+    async def start_entry(self, interaction, max_turns, button):
+        # 選択されたボタンのスタイルを変更
+        if self.selected_button:
+            self.selected_button.style = discord.ButtonStyle.secondary  # 他のボタンをリセット
+        button.style = discord.ButtonStyle.primary  # 選択されたボタンを緑に変更
+        self.selected_button = button  # 選択されたボタンを記録
+
+        # ボタンを削除してメッセージを更新
+        self.clear_items()
+        await interaction.response.edit_message(content="⏳ ゲームを準備中...", view=self)
+
+        # 参加受付ビューをチャンネルに送信
+        entry_view = EntryView(self.ctx, self.allow_dup, max_turns)
+        entry_view.entries.add(self.ctx.author)  # コマンド実行者を自動登録
+        await self.ctx.send(
+            f"📢 **10秒間ヒットアンドブロ―参加者受付中！**(ゲームマスターは自動参加)",
+            view=entry_view
+        )
 
     @discord.ui.button(label="4ターン", style=discord.ButtonStyle.secondary)
-    async def t4(self, i, b): await self.start_entry(i, 4)
+    async def t4(self, interaction, button): await self.start_entry(interaction, 4, button)
+
     @discord.ui.button(label="5ターン", style=discord.ButtonStyle.secondary)
-    async def t5(self, i, b): await self.start_entry(i, 5)
+    async def t5(self, interaction, button): await self.start_entry(interaction, 5, button)
+
     @discord.ui.button(label="6ターン", style=discord.ButtonStyle.secondary)
-    async def t6(self, i, b): await self.start_entry(i, 6)
+    async def t6(self, interaction, button): await self.start_entry(interaction, 6, button)
+
     @discord.ui.button(label="7ターン", style=discord.ButtonStyle.secondary)
-    async def t7(self, i, b): await self.start_entry(i, 7)
+    async def t7(self, interaction, button): await self.start_entry(interaction, 7, button)
+
     @discord.ui.button(label="8ターン", style=discord.ButtonStyle.secondary)
-    async def t8(self, i, b): await self.start_entry(i, 8)
+    async def t8(self, interaction, button): await self.start_entry(interaction, 8, button)
 
 class EntryView(discord.ui.View):
     def __init__(self, ctx, allow_duplicates, max_turns):
-        super().__init__(timeout=5)
+        super().__init__(timeout=10)
         self.ctx = ctx
         self.entries = set()
         self.allow_duplicates = allow_duplicates
         self.max_turns = max_turns
 
-    @discord.ui.button(label="参加する！", style=discord.ButtonStyle.success)
-    async def entry(self, interaction, b):
-        self.entries.add(interaction.user)
-        await interaction.response.send_message("🆗 参加登録しました", ephemeral=True)
+    @discord.ui.button(label="✋ 参加する!", style=discord.ButtonStyle.success)
+    async def entry(self, interaction, button):
+        if interaction.user in self.entries:
+            await interaction.response.send_message(
+                "🚫 **すでに参加登録済みです！**", ephemeral=True
+            )
+        else:
+            self.entries.add(interaction.user)
+            await interaction.response.send_message(
+                "🆗 **参加登録完了！**", ephemeral=True
+            )
 
     async def on_timeout(self):
-        if len(self.entries) < 1:
-            return await self.ctx.send("❌ 参加者がいませんでした。")
+        # ボタンを削除
+        self.clear_items()
+
+        if not self.entries:
+            return await self.ctx.send("❌ 参加者がおりませんでした。")
+        
+        # ゲームを開始
         players = list(self.entries)
         random.shuffle(players)
         game = HitBlowGame(self.ctx, players, self.allow_duplicates, self.max_turns)
@@ -310,16 +361,18 @@ class EntryView(discord.ui.View):
 
 @bot.event
 async def on_message(message):
+    # 1. 既存のコマンドを処理
     await bot.process_commands(message)
 
-    if (
-        message.guild and
-        message.guild.id in active_games and
-        not message.content.startswith("!")  # ← ここでコマンドは除外
-    ):
-        await active_games[message.guild.id].handle_guess(message.author, message)
+    # 2. Bot自身や他のBotのメッセージは無視
+    if message.author.bot:
+        return
+
+    # 3. ギルド内ゲームがあり、プレフィックスでないメッセージなら推測ハンドル
+    game = active_games.get(message.guild.id) if message.guild else None
+    if game and not message.content.startswith("!"):
+        await game.handle_guess(message.author, message)
 
 # 起動処理
 load_dotenv()
 bot.run(os.getenv("DISCORD_TOKEN"))
-
