@@ -130,6 +130,98 @@ def count_flippable(board, x, y, color):
     return after - before
 
 async def simulate_bot_turn(channel_id):
+    async def simulate_bot_turn(channel_id):
+       game = games.get(channel_id)
+       if not game or game["stage"] != "playing":
+           return
+
+       await asyncio.sleep(2)
+
+       channel = bot.get_channel(channel_id)
+       board = game["board"]
+       color = BLACK if game["turn"] == 0 else WHITE
+       opponent_color = WHITE if color == BLACK else BLACK
+       legal_moves = list(valid_moves(board, color))
+
+       # Botの上書き回数を初期化
+       if "bot_override_count" not in game:
+           game["bot_override_count"] = 0
+
+       # 上書き可能な場合、上書きを試みる
+       if game["bot_override_count"] < 10:
+           override_candidates = [(x, y) for y in range(SIZE) for x in range(SIZE) if board[y][x] == opponent_color]
+           best_pos = None
+           max_flips = -1
+           for x, y in override_candidates:
+               flips = count_flippable(board, x, y, color)
+               if flips > max_flips:
+                   best_pos = (x, y)
+                   max_flips = flips
+
+           if best_pos and max_flips > 0:
+               col, row = best_pos
+               board[row][col] = color
+               game["last_pos"] = (col, row)
+               game["turn"] = 1 - game["turn"]
+               game["bot_override_count"] += 1  # 上書き回数をインクリメント
+
+               col_label = chr(ord("A") + col)
+               row_label = str(row + 1)
+               await channel.send(f"Bot は {col_label}{row_label} に上書きしました！ (残り上書き回数: {10 - game['bot_override_count']})")
+
+               path = board_to_file(board)
+               await channel.send(file=discord.File(path))
+
+               next_player = game["players"][game["turn"]]
+               if next_player == bot.user.id:
+                   await simulate_bot_turn(channel_id)
+               else:
+                   await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
+               return
+
+       # 上書きできない場合、通常の合法手を選択
+       if legal_moves:
+           col, row = random.choice(legal_moves)
+           make_move(board, col, row, color)
+           game["last_pos"] = (col, row)
+           game["turn"] = 1 - game["turn"]
+
+           col_label = chr(ord("A") + col)
+           row_label = str(row + 1)
+           await channel.send(f"Bot は {col_label}{row_label} に置きました。")
+
+           path = board_to_file(board)
+           await channel.send(file=discord.File(path))
+
+       # 次のプレイヤーへ
+       next_color = BLACK if game["turn"] == 0 else WHITE
+       next_player = game["players"][game["turn"]]
+       valid = valid_moves(board, next_color)
+
+       if not valid:
+           other_color = WHITE if next_color == BLACK else BLACK
+           if not valid_moves(board, other_color):
+               blacks = sum(row.count(BLACK) for row in board)
+               whites = sum(row.count(WHITE) for row in board)
+               result = f"黒({BLACK}): {blacks} 石\n白({WHITE}): {whites} 石\n"
+               if blacks > whites:
+                   result += f"<@{game['players'][0]}> の勝ち！"
+               elif whites > blacks:
+                   result += f"<@{game['players'][1]}> の勝ち！"
+               else:
+                   result += "引き分け！"
+               await channel.send(result)
+               del games[channel_id]
+               return
+           else:
+               await channel.send(f"<@{next_player}> に合法手がないため、スキップされます。")
+               game["turn"] = 1 - game["turn"]
+               next_player = game["players"][game["turn"]]
+
+       if next_player == bot.user.id:
+           await simulate_bot_turn(channel_id)
+       else:
+           await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
     game = games.get(channel_id)
     if not game or game["stage"] != "playing":
         return
@@ -142,22 +234,12 @@ async def simulate_bot_turn(channel_id):
     opponent_color = WHITE if color == BLACK else BLACK
     legal_moves = list(valid_moves(board, color))
 
-    if "bot_turn_count" not in game:
-        game["bot_turn_count"] = 0
-    game["bot_turn_count"] += 1
-    turn = game["bot_turn_count"]
+    # Botの上書き回数を初期化
+    if "bot_override_count" not in game:
+        game["bot_override_count"] = 0
 
-    cheat_chance = 0.1 if turn <= 6 else 0.15 if turn <= 12 else 0.2
-    do_override = random.random() < cheat_chance
-
-    if do_override:
-
-        # ── 上書きカウンタをインクリメント ──
-        game["override_count"] = game.get("override_count", 0) + 1
-        # ── 残り回数を自動送信 ──
-        rem = 10 - game["override_count"]
-        await channel.send(f"上書きはあと{rem}回可能です。／You can override {rem} more times.")
-
+    # 上書き可能な場合、上書きを試みる
+    if game["bot_override_count"] < 10:
         override_candidates = [(x, y) for y in range(SIZE) for x in range(SIZE) if board[y][x] == opponent_color]
         best_pos = None
         max_flips = -1
@@ -172,10 +254,11 @@ async def simulate_bot_turn(channel_id):
             board[row][col] = color
             game["last_pos"] = (col, row)
             game["turn"] = 1 - game["turn"]
+            game["bot_override_count"] += 1  # 上書き回数をインクリメント
 
             col_label = chr(ord("A") + col)
             row_label = str(row + 1)
-            await channel.send(f"Bot は {col_label}{row_label} に上書きしました！")
+            await channel.send(f"Bot は {col_label}{row_label} に上書きしました！ (残り上書き回数: {10 - game['bot_override_count']})")
 
             path = board_to_file(board)
             await channel.send(file=discord.File(path))
@@ -187,34 +270,50 @@ async def simulate_bot_turn(channel_id):
                 await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
             return
 
-        if not legal_moves:
-            other_color = opponent_color
-            if not valid_moves(board, other_color):
-                # 両方合法手なし→ゲーム終了
-                blacks = sum(row.count(BLACK) for row in board)
-                whites = sum(row.count(WHITE) for row in board)
-                result = f"黒({BLACK}): {blacks} 石\n白({WHITE}): {whites} 石\n"
-                if blacks > whites:
-                    result += f"<@{game['players'][0]}> の勝ち！"
-                elif whites > blacks:
-                    result += f"<@{game['players'][1]}> の勝ち！"
-                else:
-                    result += "引き分け！"
-                await channel.send(result)
-                del games[channel_id]
-                return
-            else:
-                # 自分は打てないが相手は打てる → スキップ
-                await channel.send(f"<@{game['players'][game['turn']]}> に合法手がないため、スキップされます。")
-                game["turn"] = 1 - game["turn"]
-                next_player = game["players"][game["turn"]]
+    # 上書きできない場合、通常の合法手を選択
+    if legal_moves:
+        col, row = random.choice(legal_moves)
+        make_move(board, col, row, color)
+        game["last_pos"] = (col, row)
+        game["turn"] = 1 - game["turn"]
 
-                if next_player == bot.user.id:
-                    await asyncio.sleep(2)
-                    await simulate_bot_turn(channel_id)
-                else:
-                    await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
-                return
+        col_label = chr(ord("A") + col)
+        row_label = str(row + 1)
+        await channel.send(f"Bot は {col_label}{row_label} に置きました。")
+
+        path = board_to_file(board)
+        await channel.send(file=discord.File(path))
+
+    # 次のプレイヤーへ
+    next_color = BLACK if game["turn"] == 0 else WHITE
+    next_player = game["players"][game["turn"]]
+    valid = valid_moves(board, next_color)
+
+    if not valid:
+        other_color = WHITE if next_color == BLACK else BLACK
+        if not valid_moves(board, other_color):
+            blacks = sum(row.count(BLACK) for row in board)
+            whites = sum(row.count(WHITE) for row in board)
+            result = f"黒({BLACK}): {blacks} 石\n白({WHITE}): {whites} 石\n"
+            if blacks > whites:
+                result += f"<@{game['players'][0]}> の勝ち！"
+            elif whites > blacks:
+                result += f"<@{game['players'][1]}> の勝ち！"
+            else:
+                result += "引き分け！"
+            await channel.send(result)
+            del games[channel_id]
+            return
+        else:
+            await channel.send(f"<@{next_player}> に合法手がないため、スキップされます。")
+            game["turn"] = 1 - game["turn"]
+            next_player = game["players"][game["turn"]]
+
+    if next_player == bot.user.id:
+        await simulate_bot_turn(channel_id)
+    else:
+        await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
+    return
 
     col, row = random.choice(legal_moves)
     make_move(board, col, row, color)
