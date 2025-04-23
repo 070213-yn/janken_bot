@@ -1,22 +1,20 @@
-import discord
-from discord.ext import commands
-import hit_and_blow
-import janken_bot
-import jankenhoitour_bot
-import osero
+import subprocess
 
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+# 起動するスクリプトのリスト
+scripts = ["osero.py", "hit_and_blow.py", "janken_bot.py", "jankenhoitour_bot.py"]
 
-# 各モジュールのコマンドをBotにセットアップ
-hit_and_blow.setup(bot)
-janken_bot.setup(bot)
-jankenhoitour_bot.setup(bot)
-osero.setup(bot)
+# 各スクリプトを並列で起動
+processes = []
+try:
+    for script in scripts:
+        print(f"Starting {script}...")
+        process = subprocess.Popen(["python", script])
+        processes.append(process)
 
-@bot.event
-async def on_ready():
-    print(f'Logged in as {bot.user}')
-
-bot.run('YOUR_TOKEN')
+    # 全てのプロセスが終了するのを待機
+    for process in processes:
+        process.wait()
+except KeyboardInterrupt:
+    print("Shutting down all scripts...")
+    for process in processes:
+        process.terminate()
