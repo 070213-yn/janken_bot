@@ -121,6 +121,303 @@ def board_to_file(board):
     generate_osero_image(board, GFX_BACKGROUND, GFX_BLACK, GFX_WHITE, path)
     return path
 
+def count_flippable(board, x, y, color):
+    temp = [row[:] for row in board]
+    before = sum(row.count(color) for row in temp)
+    if not make_move(temp, x, y, color):
+        return -1
+    after = sum(row.count(color) for row in temp)
+    return after - before
+
+async def simulate_bot_turn(channel_id):
+    async def simulate_bot_turn(channel_id):
+       game = games.get(channel_id)
+       if not game or game["stage"] != "playing":
+           return
+
+       await asyncio.sleep(2)
+
+       channel = bot.get_channel(channel_id)
+       board = game["board"]
+       color = BLACK if game["turn"] == 0 else WHITE
+       opponent_color = WHITE if color == BLACK else BLACK
+       legal_moves = list(valid_moves(board, color))
+
+       # Botの上書き回数を初期化
+       if "bot_override_count" not in game:
+           game["bot_override_count"] = 0
+
+       # 上書き可能な場合、上書きを試みる
+       if game["bot_override_count"] < 10:
+           override_candidates = [(x, y) for y in range(SIZE) for x in range(SIZE) if board[y][x] == opponent_color]
+           best_pos = None
+           max_flips = -1
+           for x, y in override_candidates:
+               flips = count_flippable(board, x, y, color)
+               if flips > max_flips:
+                   best_pos = (x, y)
+                   max_flips = flips
+
+           if best_pos and max_flips > 0:
+               col, row = best_pos
+               board[row][col] = color
+               game["last_pos"] = (col, row)
+               game["turn"] = 1 - game["turn"]
+               game["bot_override_count"] += 1  # 上書き回数をインクリメント
+
+               col_label = chr(ord("A") + col)
+               row_label = str(row + 1)
+               await channel.send(f"Bot は {col_label}{row_label} に上書きしました！ (残り上書き回数: {10 - game['bot_override_count']})")
+
+               path = board_to_file(board)
+               await channel.send(file=discord.File(path))
+
+               next_player = game["players"][game["turn"]]
+               if next_player == bot.user.id:
+                   await simulate_bot_turn(channel_id)
+               else:
+                   await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
+               return
+
+       # 上書きできない場合、通常の合法手を選択
+       if legal_moves:
+           col, row = random.choice(legal_moves)
+           make_move(board, col, row, color)
+           game["last_pos"] = (col, row)
+           game["turn"] = 1 - game["turn"]
+
+           col_label = chr(ord("A") + col)
+           row_label = str(row + 1)
+           await channel.send(f"Bot は {col_label}{row_label} に置きました。")
+
+           path = board_to_file(board)
+           await channel.send(file=discord.File(path))
+
+       # 次のプレイヤーへ
+       next_color = BLACK if game["turn"] == 0 else WHITE
+       next_player = game["players"][game["turn"]]
+       valid = valid_moves(board, next_color)
+
+       if not valid:
+           other_color = WHITE if next_color == BLACK else BLACK
+           if not valid_moves(board, other_color):
+               blacks = sum(row.count(BLACK) for row in board)
+               whites = sum(row.count(WHITE) for row in board)
+               result = f"黒({BLACK}): {blacks} 石\n白({WHITE}): {whites} 石\n"
+               if blacks > whites:
+                   result += f"<@{game['players'][0]}> の勝ち！"
+               elif whites > blacks:
+                   result += f"<@{game['players'][1]}> の勝ち！"
+               else:
+                   result += "引き分け！"
+               await channel.send(result)
+               del games[channel_id]
+               return
+           else:
+               await channel.send(f"<@{next_player}> に合法手がないため、スキップされます。")
+               game["turn"] = 1 - game["turn"]
+               next_player = game["players"][game["turn"]]
+
+       if next_player == bot.user.id:
+           await simulate_bot_turn(channel_id)
+       else:
+           await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
+    game = games.get(channel_id)
+    if not game or game["stage"] != "playing":
+        return
+
+    await asyncio.sleep(2)
+
+    channel = bot.get_channel(channel_id)
+    board = game["board"]
+    color = BLACK if game["turn"] == 0 else WHITE
+    opponent_color = WHITE if color == BLACK else BLACK
+    legal_moves = list(valid_moves(board, color))
+
+    # Botの上書き回数を初期化
+    if "bot_override_count" not in game:
+        game["bot_override_count"] = 0
+
+    # 上書き可能な場合、上書きを試みる
+    if game["bot_override_count"] < 10:
+        override_candidates = [(x, y) for y in range(SIZE) for x in range(SIZE) if board[y][x] == opponent_color]
+        best_pos = None
+        max_flips = -1
+        for x, y in override_candidates:
+            flips = count_flippable(board, x, y, color)
+            if flips > max_flips:
+                best_pos = (x, y)
+                max_flips = flips
+
+        if best_pos and max_flips > 0:
+            col, row = best_pos
+            board[row][col] = color
+            game["last_pos"] = (col, row)
+            game["turn"] = 1 - game["turn"]
+            game["bot_override_count"] += 1  # 上書き回数をインクリメント
+
+            col_label = chr(ord("A") + col)
+            row_label = str(row + 1)
+            await channel.send(f"Bot は {col_label}{row_label} に上書きしました！ (残り上書き回数: {10 - game['bot_override_count']})")
+
+            path = board_to_file(board)
+            await channel.send(file=discord.File(path))
+
+            next_player = game["players"][game["turn"]]
+            if next_player == bot.user.id:
+                await simulate_bot_turn(channel_id)
+            else:
+                await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
+            return
+
+    # 上書きできない場合、通常の合法手を選択
+    if legal_moves:
+        col, row = random.choice(legal_moves)
+        make_move(board, col, row, color)
+        game["last_pos"] = (col, row)
+        game["turn"] = 1 - game["turn"]
+
+        col_label = chr(ord("A") + col)
+        row_label = str(row + 1)
+        await channel.send(f"Bot は {col_label}{row_label} に置きました。")
+
+        path = board_to_file(board)
+        await channel.send(file=discord.File(path))
+
+    # 次のプレイヤーへ
+    next_color = BLACK if game["turn"] == 0 else WHITE
+    next_player = game["players"][game["turn"]]
+    valid = valid_moves(board, next_color)
+
+    if not valid:
+        other_color = WHITE if next_color == BLACK else BLACK
+        if not valid_moves(board, other_color):
+            blacks = sum(row.count(BLACK) for row in board)
+            whites = sum(row.count(WHITE) for row in board)
+            result = f"黒({BLACK}): {blacks} 石\n白({WHITE}): {whites} 石\n"
+            if blacks > whites:
+                result += f"<@{game['players'][0]}> の勝ち！"
+            elif whites > blacks:
+                result += f"<@{game['players'][1]}> の勝ち！"
+            else:
+                result += "引き分け！"
+            await channel.send(result)
+            del games[channel_id]
+            return
+        else:
+            await channel.send(f"<@{next_player}> に合法手がないため、スキップされます。")
+            game["turn"] = 1 - game["turn"]
+            next_player = game["players"][game["turn"]]
+
+    if next_player == bot.user.id:
+        await simulate_bot_turn(channel_id)
+    else:
+        await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
+    return
+
+    col, row = random.choice(legal_moves)
+    make_move(board, col, row, color)
+    game["last_pos"] = (col, row)
+    game["turn"] = 1 - game["turn"]
+
+    col_label = chr(ord("A") + col)
+    row_label = str(row + 1)
+    await channel.send(f"Bot は {col_label}{row_label} に置きました。")
+
+    path = board_to_file(board)
+    await channel.send(file=discord.File(path))
+
+    next_color = BLACK if game["turn"] == 0 else WHITE
+    next_player = game["players"][game["turn"]]
+    valid = valid_moves(board, next_color)
+
+    if not valid:
+        other_color = WHITE if next_color == BLACK else BLACK
+        if not valid_moves(board, other_color):
+            blacks = sum(row.count(BLACK) for row in board)
+            whites = sum(row.count(WHITE) for row in board)
+            result = f"黒({BLACK}): {blacks} 石\n白({WHITE}): {whites} 石\n"
+            if blacks > whites:
+                result += f"<@{game['players'][0]}> の勝ち！"
+            elif whites > blacks:
+                result += f"<@{game['players'][1]}> の勝ち！"
+            else:
+                result += "引き分け！"
+            await channel.send(result)
+            del games[channel_id]
+            return
+        else:
+            await channel.send(f"<@{next_player}> に合法手がないため、スキップされます。")
+            game["turn"] = 1 - game["turn"]
+            next_player = game["players"][game["turn"]]
+
+    if next_player == bot.user.id:
+        await simulate_bot_turn(channel_id)
+    else:
+        await channel.send(f"<@{next_player}> の番です。例：'D3' のように送信してください。")
+
+from discord.ui import View, Button
+
+class JankenView(View):
+    def __init__(self, p1, p2):
+        super().__init__(timeout=None)
+        self.p1 = p1
+        self.p2 = p2
+        self.choices = {}
+
+    @discord.ui.button(label="✊", style=discord.ButtonStyle.primary)
+    async def rock(self, interaction, button):
+        await self.choose(interaction, "rock")
+
+    @discord.ui.button(label="✌", style=discord.ButtonStyle.primary)
+    async def scissors(self, interaction, button):
+        await self.choose(interaction, "scissors")
+
+    @discord.ui.button(label="✋", style=discord.ButtonStyle.primary)
+    async def paper(self, interaction, button):
+        await self.choose(interaction, "paper")
+
+    async def choose(self, interaction, choice):
+        user = interaction.user.id
+        if user not in (self.p1, self.p2):
+            return
+        self.choices[user] = choice
+        await interaction.response.defer()
+        if len(self.choices) == 2:
+            await self.resolve(interaction.channel)
+
+    async def resolve(self, channel):
+        p1_choice = self.choices[self.p1]
+        p2_choice = self.choices[self.p2]
+
+        result_map = {
+            ("rock", "scissors"): self.p1,
+            ("scissors", "paper"): self.p1,
+            ("paper", "rock"): self.p1,
+            ("scissors", "rock"): self.p2,
+            ("paper", "scissors"): self.p2,
+            ("rock", "paper"): self.p2,
+        }
+
+        if p1_choice == p2_choice:
+            await channel.send("引き分けです。もう一度！", view=JankenView(self.p1, self.p2))
+        else:
+            winner = result_map[(p1_choice, p2_choice)]
+            loser = self.p1 if winner == self.p2 else self.p2
+
+            # ゲーム開始
+            games[channel.id] = {
+                "players": [winner, loser],
+                "board": create_board(),
+                "stage": "playing",
+                "turn": 0,
+                "last_pos": None
+            }
+            await channel.send(f"<@{winner}> が先攻（{BLACK}）です！")
+            path = board_to_file(games[channel.id]["board"])
+            await channel.send(file=discord.File(path))
+            await channel.send(f"<@{winner}> の番です。例：'D3' のように送信してください。")
+
 @bot.event
 async def on_message(message):
     # コマンドが優先されるように
@@ -136,6 +433,10 @@ async def on_message(message):
 
     game = games[cid]
 
+    # ── ゲーム開始時に相手が置いた座標を追跡するための辞書を追加 ──
+    if "placed_positions" not in game:
+        game["placed_positions"] = set()
+
     # ── 対戦相手待ちフェーズ ──
     if game.get("stage") == "await_opponent" and message.mentions:
         opponent = message.mentions[0]
@@ -144,20 +445,47 @@ async def on_message(message):
             await message.channel.send("自分自身を対戦相手に指定できません。")
             return
 
+        # Botと対戦する場合
+        if opponent.bot:
+            p1, p2 = message.author.id, opponent.id
+            players = [p1, p2]
+            random.shuffle(players)
+            game["players"] = players
+            game["board"]   = create_board()
+            game["stage"]   = "playing"
+            game["turn"]    = 0
+            game["last_pos"]= None
+            # 上書き回数初期化
+            game["override_count"] = 0
+
+            await message.channel.send(f"<@{players[0]}> が先攻（{BLACK}）です！")
+            path = board_to_file(game["board"])
+            await message.channel.send(file=discord.File(path))
+            await message.channel.send(f"<@{players[0]}> の番です。例：'D3' のように送信してください。")
+
+            # Botが先攻なら即打ち
+            if players[0] == bot.user.id:
+                await simulate_bot_turn(cid)
+            return
+
         # 人間同士ならじゃんけんフェーズへ
-        await message.channel.send(
-            f"<@{message.author.id}> vs <@{opponent.id}> でじゃんけんを始めます。ボタンで選んでください！",
-            view=JankenView(message.author.id, opponent.id)
-        )
-        game["stage"] = "janken"
-        return
+        else:
+            await message.channel.send(
+                f"<@{message.author.id}> vs <@{opponent.id}> でじゃんけんを始めます。ボタンで選んでください！",
+                view=JankenView(message.author.id, opponent.id)
+            )
+            game["stage"] = "janken"
+            return
 
     # ── ゲーム進行中以外は無視 ──
     if game.get("stage") != "playing":
         return
 
-    # 他の人のメッセージも無視
+    # Botの番なら無視
     current_player_id = game["players"][game["turn"]]
+    if current_player_id == bot.user.id:
+        return
+    # 他の人のメッセージも無視
     if message.author.id != current_player_id:
         return
 
@@ -173,11 +501,43 @@ async def on_message(message):
 
     board = game["board"]
     color = BLACK if game["turn"] == 0 else WHITE
+    opponent_color = WHITE if color == BLACK else BLACK
+
+   # ── 人間プレイヤーの上書き回数制限 ──
+    if board[row][col] == opponent_color:
+        if "override_count" not in game:
+            game["override_count"] = {game["players"][0]: 0, game["players"][1]: 0}
+
+        # プレイヤーの上書き回数を確認
+        current_player = game["players"][game["turn"]]
+        if game["override_count"][current_player] >= 10:
+            await message.channel.send("上書きは10回まで可能です。")
+            return
+
+        # ── 相手が置いた座標に連続で上書きしないようにチェック ──
+        if (col, row) in game["placed_positions"]:
+            await message.channel.send("相手が置いた場所に連続で上書きすることはできません。")
+            return
+
+        # 上書き回数をインクリメント
+        game["override_count"][current_player] += 1
+
+        # 残り回数を自動送信
+        rem = 10 - game["override_count"][current_player]
+        await message.channel.send(f"上書きはあと{rem}回可能です。／You can override {rem} more times.")
+
+    # 自分の石への上書きは禁止
+    if board[row][col] == color:
+        await message.channel.send("自分の石がある場所には置けません。")
+        return
 
     # 合法手でなければ無視
     if not make_move(board, col, row, color):
         await message.channel.send("そこには置けません。合法手ではありません。")
         return
+
+    # 上書きが成功した場合、その座標を記録
+    game["placed_positions"].add((col, row))
 
     # 手が成功したらターン移行
     game["last_pos"] = (col, row)
@@ -213,17 +573,20 @@ async def on_message(message):
             game["turn"] = 1 - game["turn"]
             next_player  = game["players"][game["turn"]]
 
-    # 次のプレイヤーにメンション
-    await message.channel.send(
-        f"<@{next_player}> の番です。例：'D3' のように送信してください。"
-    )
+    # 次がBotならBotに移譲、そうでなければメンション
+    if next_player == bot.user.id:
+        await simulate_bot_turn(cid)
+    else:
+        await message.channel.send(
+            f"<@{next_player}> の番です。例：'D3' のように送信してください。"
+        )
 
 @bot.command()
 async def osero(ctx):
     games[ctx.channel.id] = {
         "stage": "await_opponent"
     }
-    await ctx.send("対戦相手を `@ユーザー名` で指定してください。")
+    await ctx.send("対戦相手を `@ユーザー名` で指定してください（または @Bot と対戦）。")
 
 @bot.command()
 async def end(ctx):
@@ -236,5 +599,19 @@ async def end(ctx):
 @bot.event
 async def on_ready():
     print(f"{bot.user} としてログインしました")
+
+@bot.command()
+async def c(ctx):
+    """上書き残回数を表示するコマンド / Show remaining override count"""
+    game = games.get(ctx.channel.id)
+    # ゲーム進行中でなければ
+    if not game or game.get("stage") != "playing":
+        await ctx.send("進行中のゲームがありません")
+        return
+
+    # 現在の上書き使用回数を取得（未定義なら0）
+    used = game.get("override_count", 0)
+    remaining = max(0, 10 - used)
+    await ctx.send(f"上書きはあと{remaining}回可能です！")
 
 bot.run(TOKEN)
