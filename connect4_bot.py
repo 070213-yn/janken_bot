@@ -65,7 +65,7 @@ class Connect4Game:
         board_str = '\n'.join(''.join(EMOJIS[cell] for cell in row) for row in self.board)
         footer = (
                 "<:A_:1385608608913293322>"
-                "<:B_:1385608610604712917>"
+                "<:B_:1385608616064712917>"
                 "<:C_:1385608624818356325>"
                 "<:D_:1385608635476082819>"
                 "<:E_:1385608646372622457>"
