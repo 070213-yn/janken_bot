@@ -1,7 +1,7 @@
 import subprocess
 
 # 起動するスクリプトのリスト
-scripts = ["hit_and_blow.py", "janken_bot.py", "jankenhoitour_bot.py"]
+scripts = ["hit_and_blow.py", "janken_bot.py", "jankenhoitour_bot.py", "connect4_bot.py", "osero.py"]
 
 # 各スクリプトを並列で起動
 processes = []

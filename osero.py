@@ -600,6 +600,13 @@ async def end(ctx):
 async def on_ready():
     print(f"{bot.user} としてログインしました")
 
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        # 無視する or 任意のメッセージを送る
+        return
+    raise error  # 他のエラーは再度 raise する
+
 @bot.command()
 async def c(ctx):
     """上書き残回数を表示するコマンド / Show remaining override count"""
