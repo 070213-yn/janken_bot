@@ -94,13 +94,6 @@ async def j(ctx):
         active_games[ctx.guild.id] = True
     await session.start()
 
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        # 無視する or 任意のメッセージを送る
-        return
-    raise error  # 他のエラーは再度 raise する
-
 
 # 起動処理
 load_dotenv()
