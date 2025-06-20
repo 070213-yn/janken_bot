@@ -17,4 +17,8 @@ echo === オセロBotを起動します ===
 start "" python osero.py
 timeout /t 1
 
+echo === コネクトフォーBotを起動します ===
+start "" python connect4_bot.py
+timeout /t 1
+
 pause

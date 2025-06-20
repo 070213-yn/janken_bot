@@ -1,5 +1,7 @@
 ﻿import discord
 from discord.ext import commands
+import os
+from dotenv import load_dotenv
 import random
 
 intents = discord.Intents.default()
@@ -8,9 +10,9 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 EMOJIS = {
-    "empty": "<:空間:1385582681118478388>",
-    "red": "<:赤:1362319002541490218>",
-    "blue": "<:青:1362318775990616215>",
+    "empty": "<:space:1385582681118478388>",
+    "red": "<:red:1362318988365004870>",
+    "blue": "<:blue:1362318775990616215>",
 }
 
 COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
@@ -23,7 +25,7 @@ class Connect4Game:
         self.board = [['empty' for _ in range(7)] for _ in range(ROWS)]
         self.players = [player1, player2]
         random.shuffle(self.players)
-        self.current = 0  # index
+        self.current = 0
         self.winner = None
         self.active = True
 
@@ -60,7 +62,18 @@ class Connect4Game:
         return False
 
     def get_board_display(self):
-        return '\n'.join(''.join(EMOJIS[cell] for cell in row) for row in self.board)
+        board_str = '\n'.join(''.join(EMOJIS[cell] for cell in row) for row in self.board)
+        footer = (
+            "<:A_:1385606649510625300>"
+            "<:B_:1385606655802085507>"
+            "<:C_:1385606664652066936>"
+            "<:D_:1385606677813788883>"
+            "<:E_:1385606770377878784>"
+            "<:F_:1385606879027265586>"
+            "<:G_:1385606890876043314>"
+        )
+        return f"{board_str}\n{footer}"
+
 
 class JoinView(discord.ui.View):
     def __init__(self, author):
@@ -104,36 +117,27 @@ async def end(ctx):
 
 @bot.event
 async def on_message(message):
-    await bot.process_commands(message)
     if message.author.bot:
         return
 
-    if message.channel.id not in games:
-        return
+    game = games.get(message.channel.id)
+    if game and game.active and message.author == game.players[game.current]:
+        content = message.content.strip().upper()
+        if content in COLUMNS:
+            success, error = game.place_piece(content)
+            if not success:
+                await message.channel.send(error)
+                return
 
-    game = games[message.channel.id]
-    if not game.active:
-        return
+            board_display = game.get_board_display()
+            if game.winner:
+                await message.channel.send(f"{board_display}\n{game.winner.mention} の勝利でございますわ！🎉")
+                del games[message.channel.id]
+            else:
+                await message.channel.send(f"{board_display}\n次は {game.players[game.current].mention} の番でございますわ。")
+            return
 
-    if message.author != game.players[game.current]:
-        return
-
-    content = message.content.strip().upper()
-    if content not in COLUMNS:
-        await message.channel.send("列は A～G で指定してくださいませ。")
-        return
-
-    success, error = game.place_piece(content)
-    if not success:
-        await message.channel.send(error)
-        return
-
-    board_display = game.get_board_display()
-    if game.winner:
-        await message.channel.send(f"{board_display}\n{game.winner.mention} の勝利でございますわ！🎉")
-        del games[message.channel.id]
-    else:
-        await message.channel.send(f"{board_display}\n次は {game.players[game.current].mention} の番でございますわ。")
+    await bot.process_commands(message)
 
 # 起動処理
 load_dotenv()
